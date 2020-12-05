@@ -37,6 +37,11 @@ int ps2dev_deinit(struct ps2dev* dev)
     return 0;
 }
 
+int ps2dev_available(struct ps2dev* dev)
+{
+    return (gpio_read(dev->datafd) == GPIO_LOW || gpio_read(dev->clkfd) == GPIO_LOW);
+}
+
 int ps2dev_write(struct ps2dev* dev, uint8_t data)
 {
     usleep(PS2CLK_DELAY);
@@ -129,12 +134,14 @@ int ps2dev_read(struct ps2dev* dev, uint8_t* value)
 
 int ps2dev_keyboard_press(struct ps2dev* dev, int key)
 {
-    char press[8];
+    uint8_t press[8] = {};
     int bytes;
     if ((bytes = ps2keymap_get_press(key, 8, press)) < 0)
         return -1;
 
-    printf("Pressing key %d, resulting in %d bytes [%x %x %x %x %x %x %x %x]\n", key, bytes, press[0], press[1], press[2], press[3], press[4], press[5], press[6], press[7]);
+#ifdef DEBUG
+    printf("Pressing key %d, resulting in %d bytes [%0x %0x %0x %0x %0x %0x %0x %0x]\n", key, bytes, press[0], press[1], press[2], press[3], press[4], press[5], press[6], press[7]);
+#endif
 
     for (int i = 0; i < bytes; ++i)
         ps2dev_write(dev, press[i]);
@@ -143,12 +150,14 @@ int ps2dev_keyboard_press(struct ps2dev* dev, int key)
 }
 int ps2dev_keyboard_release(struct ps2dev* dev, int key)
 {
-    char release[8];
+    uint8_t release[8] = {};
     int bytes;
     if ((bytes = ps2keymap_get_break(key, 8, release)) < 0)
         return -1;
 
+#ifdef DEBUG
     printf("Releasing key %d, resulting in %d bytes [%x %x %x %x %x %x %x %x]\n", key, bytes, release[0], release[1], release[2], release[3], release[4], release[5], release[6], release[7]);
+#endif
 
     for (int i = 0; i < bytes; ++i)
         ps2dev_write(dev, release[i]);

@@ -25,6 +25,7 @@ struct ps2dev
 int ps2dev_init(struct ps2dev* dev, int type, int clk, int data);
 int ps2dev_deinit(struct ps2dev* dev);
 
+int ps2dev_available(struct ps2dev* dev);
 int ps2dev_write(struct ps2dev* dev, uint8_t data);
 int ps2dev_read(struct ps2dev* dev, uint8_t* data);
 
