@@ -18,12 +18,19 @@
 struct ps2dev
 {
     int type;
+#ifdef DEBUG
+    const char* name;
+#endif
 
     int clkfd, datafd;
+    uint8_t last_byte;
+
+    int(*handle_command)(struct ps2dev*, uint8_t);
 };
 
 int ps2dev_init(struct ps2dev* dev, int type, int clk, int data);
 int ps2dev_deinit(struct ps2dev* dev);
+int ps2dev_poll(struct ps2dev* dev);
 
 int ps2dev_available(struct ps2dev* dev);
 int ps2dev_write(struct ps2dev* dev, uint8_t data);
@@ -33,5 +40,6 @@ int ps2dev_keyboard_press(struct ps2dev* dev, int key);
 int ps2dev_keyboard_release(struct ps2dev* dev, int key);
 
 int ps2dev_mouse_write(struct ps2dev* dev, int x, int y, int buttons);
+// int ps2dev_mouse_write_mw(struct ps2dev* dev, int x, int y, int z, int buttons);
 
 #endif

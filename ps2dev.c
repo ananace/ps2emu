@@ -24,6 +24,8 @@ void _ps2dev_pulse(int fd)
 
 int ps2dev_init(struct ps2dev* dev, int type, int clk, int data)
 {
+    memset(dev, 0, sizeof(struct ps2dev));
+
     dev->type = type;
     dev->clkfd = gpio_export(clk, GPIO_OUT);
     dev->datafd = gpio_export(data, GPIO_INOUT);
@@ -37,6 +39,111 @@ int ps2dev_deinit(struct ps2dev* dev)
 
     return 0;
 }
+int ps2dev_poll(struct ps2dev* dev)
+{
+    if (!ps2dev_available(dev))
+        return 0;
+
+    uint8_t cmd = 0;
+    ps2dev_read(dev, &cmd);
+
+    if (dev->handle_command != 0)
+        if (dev->handle_command(dev, cmd) == 0)
+            return 0;
+
+    uint8_t subcmd = 0;
+    if (dev->type == PS2DEV_KEYBOARD)
+    {
+        switch (cmd)
+        {
+        case 0xED: // LED update
+            ps2dev_write(dev, PS2_ACK);
+            ps2dev_read(dev, &subcmd);
+            ps2dev_write(dev, PS2_ACK);
+            break;
+
+        case 0xEE: // Echo
+            ps2dev_write(dev, PS2_ECHO);
+            break;
+
+        case 0xF0: // Scancode
+            ps2dev_write(dev, PS2_ACK);
+            ps2dev_read(dev, &subcmd);
+            if (subcmd == 0) // Get
+            {
+                ps2dev_write(dev, PS2_ACK);
+                ps2dev_write(dev, 0x02); // Always return scancode set 2
+            }
+            else // Set, ignored
+                ps2dev_write(dev, PS2_ACK);
+            break;
+
+        case 0xF2: // ID query
+            ps2dev_write(dev, PS2_ACK);
+            ps2dev_write(dev, 0xAB);
+            ps2dev_write(dev, 0x83);
+            break;
+
+        case 0xF3: // Set typing rates
+            ps2dev_write(dev, PS2_ACK);
+            ps2dev_read(dev, &subcmd);
+            ps2dev_write(dev, PS2_ACK);
+            break;
+        }
+    }
+    else if (dev->type == PS2DEV_MOUSE)
+    {
+        switch (cmd)
+        {
+        case 0xE6: // Set scaling
+            ps2dev_write(dev, PS2_ACK);
+            ps2dev_read(dev, &subcmd);
+            ps2dev_write(dev, PS2_ACK);
+            break;
+
+        case 0xE8: // Set resolution
+            ps2dev_write(dev, PS2_ACK);
+            ps2dev_read(dev, &subcmd);
+            ps2dev_write(dev, PS2_ACK);
+            break;
+
+        case 0xF2: // ID query
+            ps2dev_write(dev, PS2_ACK);
+            ps2dev_write(dev, 0x00);
+            break;
+
+        case 0xF3: // Set sample rate
+            ps2dev_write(dev, PS2_ACK);
+            ps2dev_read(dev, &subcmd);
+            ps2dev_write(dev, PS2_ACK);
+            break;
+        }
+    }
+
+    switch (cmd)
+    {
+    case 0xF6: // Reset to defaults
+        ps2dev_write(dev, PS2_ACK);
+        break;
+
+    case 0xFE: // Resend last byte
+        ps2dev_write(dev, dev->last_byte);
+        break;
+
+    case 0xFF: // Reset, run self-test
+        ps2dev_write(dev, PS2_TEST_SUCC);
+        break;
+
+    default:
+#ifdef DEBUG
+        printf("Unhandled PS/2 command 0x%X received on %s\n", cmd, dev->name);
+#endif
+        ps2dev_write(dev, PS2_ACK);
+        break;
+    }
+
+    return 0;
+}
 
 int ps2dev_available(struct ps2dev* dev)
 {
@@ -45,6 +152,8 @@ int ps2dev_available(struct ps2dev* dev)
 
 int ps2dev_write(struct ps2dev* dev, uint8_t data)
 {
+    dev->last_byte = data;
+
     usleep(PS2CLK_DELAY);
 
     gpio_write(dev->datafd, GPIO_LOW);

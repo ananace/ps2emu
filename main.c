@@ -7,6 +7,10 @@ int main(int argc, char** argv)
 
     ps2dev_init(&dev, PS2DEV_KEYBOARD, 1, 2);
 
+#ifdef DEBUG
+    dev->name = "Testing device";
+#endif
+
     ps2dev_keyboard_press(&dev, KEY_LEFT);
     ps2dev_keyboard_release(&dev, KEY_LEFT);
     ps2dev_keyboard_press(&dev, KEY_RIGHT);

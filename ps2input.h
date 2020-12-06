@@ -10,8 +10,6 @@ struct ps2input
     struct ps2dev* target_device;
 
     int buf[16];
-
-    int(*handle_command)(uint8_t);
 };
 
 int ps2input_init(struct ps2input* input, const char* source, struct ps2dev* target);
