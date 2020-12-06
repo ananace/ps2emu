@@ -4,6 +4,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -161,6 +162,29 @@ int ps2dev_keyboard_release(struct ps2dev* dev, int key)
 
     for (int i = 0; i < bytes; ++i)
         ps2dev_write(dev, release[i]);
+
+    return 0;
+}
+
+uint8_t _ps2dev_clip(uint32_t a)
+{
+    return (a & (~0xff)) ? ((-a)>>31) : (a);
+}
+int ps2dev_mouse_write(struct ps2dev* dev, int x, int y, int buttons)
+{
+    uint8_t byte = 0;
+    byte |= (abs(x) > 255) << 7;
+    byte |= (abs(y) > 255) << 6;
+    byte |= (x < 0) << 5;
+    byte |= (y < 0) << 4;
+    byte |= 1 << 3;
+    byte |= (buttons & 0x01) << 2;
+    byte |= ((buttons & 0x02) >> 1) << 1;
+    byte |= ((buttons & 0x04) >> 2) << 0;
+
+    ps2dev_write(dev, byte);
+    ps2dev_write(dev, _ps2dev_clip(abs(x)));
+    ps2dev_write(dev, _ps2dev_clip(abs(y)));
 
     return 0;
 }

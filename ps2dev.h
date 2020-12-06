@@ -32,4 +32,6 @@ int ps2dev_read(struct ps2dev* dev, uint8_t* data);
 int ps2dev_keyboard_press(struct ps2dev* dev, int key);
 int ps2dev_keyboard_release(struct ps2dev* dev, int key);
 
+int ps2dev_mouse_write(struct ps2dev* dev, int x, int y, int buttons);
+
 #endif
