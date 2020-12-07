@@ -4,6 +4,9 @@
 #include <linux/input-event-codes.h>
 #include <linux/input.h>
 
+#include <dirent.h>
+#include <libgen.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define CHUNK_SIZE 8
@@ -49,6 +52,9 @@ int ps2input_init(struct ps2input* input, const char* source, struct ps2dev* tar
 
     input->source_device = fopen(source, "rb");
     input->target_device = target;
+    char* buf = strdup(source);
+    input->event = strdup(basename(buf));
+    free(buf);
 
     input->target_device->handle_command = _ps2dev_handle_cmd;
     input->target_device->user_data = (long)input;
@@ -59,6 +65,8 @@ int ps2input_deinit(struct ps2input* input)
 {
     if (input->source_device != 0)
         fclose(input->source_device);
+    if (input->event != 0)
+        free((void*)input->event);
 
     input->source_device = 0;
 
@@ -145,6 +153,49 @@ int ps2input_poll(struct ps2input* input)
             break;
         }
     }
+
+    return 0;
+}
+
+// TODO: Better method?
+int ps2input_set_led(struct ps2input* input, int led, int value)
+{
+    const char* ledname;
+    switch (led)
+    {
+    case LED_CAPSL: ledname = "capslock"; break;
+    case LED_NUML: ledname = "numlock"; break;
+    case LED_SCROLLL: ledname = "scrolllock"; break;
+
+    default:
+        return -1;
+    }
+
+    char buf[256];
+    sprintf(buf, "/sys/class/input/%s/device/", input->event);
+    DIR* directory = opendir(buf);
+    struct dirent* entry;
+
+    char* input_led = 0;
+    while ((entry = readdir(directory)))
+    {
+        if (strstr(entry->d_name, ledname))
+        {
+            input_led = strdup(entry->d_name);
+            break;
+        }
+    }
+    closedir(directory);
+
+    if (input_led == 0)
+        return -2;
+
+    sprintf(buf, "/sys/class/input/%s/device/%s/brightness", input->event, input_led);
+    free(input_led);
+
+    FILE* brightness = fopen(buf, "w");
+    fwrite(value ? "1" : "0", 1, 1, brightness);
+    fclose(brightness);
 
     return 0;
 }
