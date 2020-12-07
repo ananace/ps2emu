@@ -131,7 +131,9 @@ int ps2dev_poll(struct ps2dev* dev)
         break;
 
     case 0xFF: // Reset, run self-test
-        ps2dev_write(dev, PS2_TEST_SUCC);
+        ps2dev_write(dev, PS2_ACK);
+        while (ps2dev_write(dev, PS2_TEST_SUCC) != 0)
+            usleep(PS2CLK_DELAY);
         break;
 
     default:
@@ -154,7 +156,11 @@ int ps2dev_write(struct ps2dev* dev, uint8_t data)
 {
     dev->last_byte = data;
 
-    usleep(PS2CLK_DELAY);
+    if (gpio_read(dev->clkfd) == GPIO_LOW)
+        return -1;
+
+    if (gpio_read(dev->datafd) == GPIO_LOW)
+        return -2;
 
     gpio_write(dev->datafd, GPIO_LOW);
     _ps2dev_pulse(dev->clkfd);
@@ -181,8 +187,6 @@ int ps2dev_write(struct ps2dev* dev, uint8_t data)
     gpio_write(dev->datafd, GPIO_HIGH);
     _ps2dev_pulse(dev->clkfd);
 
-    usleep(PS2CLK_DELAY);
-
 #ifdef DEBUG
     printf("Wrote data: %x, parity: %i\n", data, parity);
 #endif
@@ -197,6 +201,7 @@ int ps2dev_read(struct ps2dev* dev, uint8_t* value)
     {
         if (((double)(clock() - start)) / CLOCKS_PER_SEC > (1.0 / PS2CLK_TIMEOUT))
             return -1;
+        usleep(PS2CLK_DELAY);
     }
 
     int data = 0x00;
