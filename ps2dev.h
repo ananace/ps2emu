@@ -25,6 +25,7 @@ struct ps2dev
     int clkfd, datafd;
     uint8_t last_byte;
 
+    long user_data;
     int(*handle_command)(struct ps2dev*, uint8_t);
 };
 

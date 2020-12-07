@@ -16,12 +16,42 @@
 
 #define STATE_STREAM (1 << 0)
 
+int _ps2dev_handle_cmd(struct ps2dev* dev, uint8_t cmd)
+{
+    struct ps2input* inp = (struct ps2input*)dev->user_data;
+
+    if (dev->type == PS2DEV_KEYBOARD)
+    {
+    }
+    else
+    {
+    }
+
+    switch (cmd)
+    {
+    case 0xF4: // Enable streaming
+        ps2dev_write(dev, PS2_ACK);
+        inp->buf[BUF_STATE] |= STATE_STREAM;
+        return 0;
+
+    case 0xF5: // Disable streaming
+        ps2dev_write(dev, PS2_ACK);
+        inp->buf[BUF_STATE] &= ~STATE_STREAM;
+        return 0;
+    }
+
+    return 1;
+}
+
 int ps2input_init(struct ps2input* input, const char* source, struct ps2dev* target)
 {
     memset(input, 0, sizeof(struct ps2input));
 
     input->source_device = fopen(source, "rb");
     input->target_device = target;
+
+    input->target_device->handle_command = _ps2dev_handle_cmd;
+    input->target_device->user_data = (long)input;
 
     return 0;
 }
