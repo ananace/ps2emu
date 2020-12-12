@@ -22,9 +22,22 @@
 int _ps2dev_handle_cmd(struct ps2dev* dev, uint8_t cmd)
 {
     struct ps2input* inp = (struct ps2input*)dev->user_data;
+    uint8_t data;
 
     if (dev->type == PS2DEV_KEYBOARD)
     {
+        switch (cmd)
+        {
+        case 0xED:
+            ps2dev_write(dev, PS2_ACK);
+            ps2dev_read(dev, &data);
+            ps2dev_write(dev, PS2_ACK);
+
+            ps2input_set_led(inp, LED_SCROLLL, (data & 0x01) == 0x01);
+            ps2input_set_led(inp, LED_NUML, (data & 0x02) == 0x02);
+            ps2input_set_led(inp, LED_CAPSL, (data & 0x04) == 0x04);
+            return 0;
+        }
     }
     else
     {
