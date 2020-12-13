@@ -83,12 +83,6 @@ int ps2dev_poll(struct ps2dev* dev)
             ps2dev_write(dev, 0xAB);
             ps2dev_write(dev, 0x83);
             break;
-
-        case 0xF3: // Set typing rates
-            ps2dev_write(dev, PS2_ACK);
-            ps2dev_read(dev, &subcmd);
-            ps2dev_write(dev, PS2_ACK);
-            break;
         }
     }
     else if (dev->type == PS2DEV_MOUSE)
@@ -111,23 +105,23 @@ int ps2dev_poll(struct ps2dev* dev)
             ps2dev_write(dev, PS2_ACK);
             ps2dev_write(dev, 0x00);
             break;
-
-        case 0xF3: // Set sample rate
-            ps2dev_write(dev, PS2_ACK);
-            ps2dev_read(dev, &subcmd);
-            ps2dev_write(dev, PS2_ACK);
-            break;
         }
     }
 
     switch (cmd)
     {
+    case 0xF3: // Set rates
+        ps2dev_write(dev, PS2_ACK);
+        ps2dev_read(dev, &subcmd);
+        ps2dev_write(dev, PS2_ACK);
+        break;
+
     case 0xF6: // Reset to defaults
         ps2dev_write(dev, PS2_ACK);
         break;
 
     case 0xFE: // Resend last byte
-        ps2dev_write(dev, dev->last_byte);
+        ps2dev_write(dev, PS2_NAK);
         break;
 
     case 0xFF: // Reset, run self-test

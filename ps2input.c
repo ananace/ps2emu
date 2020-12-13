@@ -13,17 +13,31 @@
 #define CHUNK_SIZE 8
 
 #define BUF_STATE 0
-#define BUF_MOUSE_X 1
-#define BUF_MOUSE_Y 2
-#define BUF_MOUSE_B 3
-#define BUF_KBD_LED 3
 
-#define STATE_MODE 0x3
+enum _ps2input_buf_kbd
+{
+    BUF_KBD_LED = 1,
+    BUF_KBD_RATE,
+    BUF_KBD_DELAY
+};
+
+enum _ps2input_buf_mouse
+{
+    BUF_MOUSE_X = 1,
+    BUF_MOUSE_Y,
+    BUF_MOUSE_B,
+};
+
+#define STATE_MODE    ((1 << 0) | \
+                       (1 << 1))
 #define STATE_DISABLED (1 << 2)
 
-#define MODE_STREAM 0
-#define MODE_ECHO 1
-#define MODE_REMOTE 2
+enum _ps2input_mode_mouse
+{
+    MODE_STREAM,
+    MODE_ECHO,
+    MODE_REMOTE
+};
 
 int _ps2dev_handle_cmd(struct ps2dev* dev, uint8_t cmd)
 {
@@ -53,8 +67,8 @@ int _ps2dev_handle_cmd(struct ps2dev* dev, uint8_t cmd)
                 float repeat_rate  = (pow(2, (data & 0x18) >> 3) * (8 + (data & 0x3)) / 240.f);
                 uint16_t repeat_delay = 250 + ((data & 0x60) >> 5) * 250;
 
-                (void)repeat_rate;
-                (void)repeat_delay;
+                inp->buf[BUF_KBD_RATE] = repeat_rate;
+                inp->buf[BUF_KBD_DELAY] = repeat_delay;
 
 #ifdef DEBUG
                 printf("Requesting input repeat at %.1f/s after %dms\n", repeat_rate, repeat_delay);
@@ -65,12 +79,12 @@ int _ps2dev_handle_cmd(struct ps2dev* dev, uint8_t cmd)
         case 0xF5:
             inp->buf[BUF_STATE] &= ~STATE_DISABLED;
         case 0xF6:
+            ps2dev_write(dev, PS2_ACK);
+
             // Reset all options
             ps2input_set_led(inp, LED_SCROLLL, 0);
             ps2input_set_led(inp, LED_NUML, 0);
             ps2input_set_led(inp, LED_CAPSL, 0);
-
-            ps2dev_write(dev, PS2_ACK);
             return 0;
         }
     }
@@ -82,6 +96,12 @@ int _ps2dev_handle_cmd(struct ps2dev* dev, uint8_t cmd)
             {
                 ps2dev_write(dev, PS2_ACK);
                 inp->buf[BUF_STATE] &= ~STATE_MODE;
+                return 0;
+            }
+            else if (cmd == 0xFF)
+            {
+                ps2dev_write(dev, PS2_ACK);
+                memset(inp->buf, 0, PS2INPUT_BUF);
                 return 0;
             }
 
@@ -104,6 +124,12 @@ int _ps2dev_handle_cmd(struct ps2dev* dev, uint8_t cmd)
 
         case 0xE9:
             ps2dev_write(dev, PS2_NAK);
+
+            /*
+             * ps2dev_write(dev, status);
+             * ps2dev_write(dev, resolution);
+             * ps2dev_write(dev, sample_rate);
+             */
 
             return 0;
 
@@ -169,6 +195,16 @@ int _ps2dev_handle_cmd(struct ps2dev* dev, uint8_t cmd)
             printf("Requesting sample rate as %d\n", data);
 #endif
             return 0;
+
+        case 0xF6:
+            // Reset all options
+            inp->buf[BUF_STATE] &= ~STATE_MODE;
+
+        case 0xF5:
+            inp->buf[BUF_STATE] &= ~STATE_DISABLED;
+
+            ps2dev_write(dev, PS2_ACK);
+            return 0;
         }
     }
 
@@ -179,13 +215,10 @@ int _ps2dev_handle_cmd(struct ps2dev* dev, uint8_t cmd)
         inp->buf[BUF_STATE] &= ~STATE_DISABLED;
         return 0;
 
-    case 0xF5: // Disable streaming
-        ps2dev_write(dev, PS2_ACK);
-        inp->buf[BUF_STATE] |= STATE_DISABLED;
-        return 0;
-
     case 0xFF:
-        inp->buf[BUF_STATE] &= ~STATE_MODE;
+        ps2dev_write(dev, PS2_ACK);
+
+        memset(inp->buf, 0, PS2INPUT_BUF);
 
         ps2dev_write(dev, 0xAA);
         while (ps2dev_write(dev, 0x00) != 0)
@@ -311,7 +344,7 @@ int ps2input_poll(struct ps2input* input)
 }
 
 // TODO: Better method?
-int ps2input_set_led(struct ps2input* input, int led, int value)
+FILE* _ps2input_get_ledfile(struct ps2input* input, int led, const char* mode)
 {
     const char* ledname;
     switch (led)
@@ -321,7 +354,7 @@ int ps2input_set_led(struct ps2input* input, int led, int value)
     case LED_SCROLLL: ledname = "scrolllock"; break;
 
     default:
-        return -1;
+        return 0;
     }
 
     char buf[256];
@@ -341,12 +374,33 @@ int ps2input_set_led(struct ps2input* input, int led, int value)
     closedir(directory);
 
     if (input_led == 0)
-        return -2;
+        return 0;
 
     sprintf(buf, "/sys/class/input/%s/device/%s/brightness", input->event, input_led);
     free(input_led);
 
-    FILE* brightness = fopen(buf, "w");
+    return fopen(buf, mode);
+}
+
+int ps2input_get_led(struct ps2input* input, int led)
+{
+    FILE* brightness = _ps2input_get_ledfile(input, led, "r");
+    if (brightness == 0)
+        return -1;
+
+    char buf[32];
+    fread(buf, 32, 1, brightness);
+    fclose(brightness);
+
+    return atoi(buf);
+}
+
+int ps2input_set_led(struct ps2input* input, int led, int value)
+{
+    FILE* brightness = _ps2input_get_ledfile(input, led, "w");
+    if (brightness == 0)
+        return -1;
+
     fwrite(value ? "1" : "0", 1, 1, brightness);
     fclose(brightness);
 

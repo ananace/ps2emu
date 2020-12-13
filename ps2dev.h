@@ -8,6 +8,7 @@
 #define PS2_ECHO       0xEE
 #define PS2_ACK        0xFA
 #define PS2_TEST_FAIL1 0xFC
+#define PS2_NAK2       0xFC
 #define PS2_TEST_FAIL2 0xFD
 #define PS2_RESEND     0xFE
 #define PS2_NAK        0xFE
