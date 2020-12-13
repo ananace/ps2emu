@@ -6,6 +6,7 @@
 
 #include <dirent.h>
 #include <libgen.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -17,7 +18,12 @@
 #define BUF_MOUSE_B 3
 #define BUF_KBD_LED 3
 
-#define STATE_STREAM (1 << 0)
+#define STATE_MODE 0x3
+#define STATE_DISABLED (1 << 2)
+
+#define MODE_STREAM 0
+#define MODE_ECHO 1
+#define MODE_REMOTE 2
 
 int _ps2dev_handle_cmd(struct ps2dev* dev, uint8_t cmd)
 {
@@ -37,22 +43,153 @@ int _ps2dev_handle_cmd(struct ps2dev* dev, uint8_t cmd)
             ps2input_set_led(inp, LED_NUML, (data & 0x02) == 0x02);
             ps2input_set_led(inp, LED_CAPSL, (data & 0x04) == 0x04);
             return 0;
+
+        case 0xF3:
+            ps2dev_write(dev, PS2_ACK);
+            ps2dev_read(dev, &data);
+            ps2dev_write(dev, PS2_ACK);
+
+            {
+                float repeat_rate  = (pow(2, (data & 0x18) >> 3) * (8 + (data & 0x3)) / 240.f);
+                uint16_t repeat_delay = 250 + ((data & 0x60) >> 5) * 250;
+
+                (void)repeat_rate;
+                (void)repeat_delay;
+
+#ifdef DEBUG
+                printf("Requesting input repeat at %.1f/s after %dms\n", repeat_rate, repeat_delay);
+#endif
+            }
+            return 0;
+
+        case 0xF5:
+            inp->buf[BUF_STATE] &= ~STATE_DISABLED;
+        case 0xF6:
+            // Reset all options
+            ps2input_set_led(inp, LED_SCROLLL, 0);
+            ps2input_set_led(inp, LED_NUML, 0);
+            ps2input_set_led(inp, LED_CAPSL, 0);
+
+            ps2dev_write(dev, PS2_ACK);
+            return 0;
         }
     }
     else
     {
+        if ((inp->buf[BUF_STATE] & STATE_MODE) == MODE_ECHO)
+        {
+            if (cmd == 0xEC)
+            {
+                ps2dev_write(dev, PS2_ACK);
+                inp->buf[BUF_STATE] &= ~STATE_MODE;
+                return 0;
+            }
+
+            ps2dev_write(dev, cmd);
+            return 0;
+        }
+
+        switch (cmd)
+        {
+
+        case 0xE6:
+            ps2dev_write(dev, PS2_ACK);
+            ps2dev_read(dev, &data);
+            ps2dev_write(dev, PS2_ACK);
+
+#ifdef DEBUG
+            printf("Requesting scaling at %dx\n", data);
+#endif
+            return 0;
+
+        case 0xE9:
+            ps2dev_write(dev, PS2_NAK);
+
+            return 0;
+
+        case 0xEA:
+        case 0xEC:
+            ps2dev_write(dev, PS2_ACK);
+
+            inp->buf[BUF_STATE] &= ~STATE_MODE;
+
+#ifdef DEBUG
+            printf("Setting mode: stream.\n");
+#endif
+            return 0;
+
+        case 0xEB:
+            ps2dev_write(dev, PS2_ACK);
+            ps2dev_mouse_write(inp->target_device, inp->buf[BUF_MOUSE_X], inp->buf[BUF_MOUSE_Y], inp->buf[BUF_MOUSE_B]);
+            return 0;
+
+        case 0xED:
+            ps2dev_write(dev, PS2_ACK);
+            ps2dev_read(dev, &data);
+            ps2dev_write(dev, PS2_ACK);
+
+            {
+                uint8_t counts = pow(2, data);
+                (void)counts;
+
+#ifdef DEBUG
+                printf("Requesting resolution at %d count(s)/mm\n", counts);
+#endif
+            }
+            return 0;
+
+        case 0xEE:
+            ps2dev_write(dev, PS2_ACK);
+
+            inp->buf[BUF_STATE] &= ~STATE_MODE;
+            inp->buf[BUF_STATE] |= MODE_ECHO;
+
+#ifdef DEBUG
+            printf("Setting mode: echo/wrap.\n");
+#endif
+            return 0;
+
+        case 0xF0:
+            ps2dev_write(dev, PS2_ACK);
+
+            inp->buf[BUF_STATE] &= ~STATE_MODE;
+            inp->buf[BUF_STATE] |= MODE_REMOTE;
+
+#ifdef DEBUG
+            printf("Setting mode: remote.\n");
+#endif
+            return 0;
+
+        case 0xF3:
+            ps2dev_write(dev, PS2_ACK);
+            ps2dev_read(dev, &data);
+            ps2dev_write(dev, PS2_ACK);
+
+#ifdef DEBUG
+            printf("Requesting sample rate as %d\n", data);
+#endif
+            return 0;
+        }
     }
 
     switch (cmd)
     {
     case 0xF4: // Enable streaming
         ps2dev_write(dev, PS2_ACK);
-        inp->buf[BUF_STATE] |= STATE_STREAM;
+        inp->buf[BUF_STATE] &= ~STATE_DISABLED;
         return 0;
 
     case 0xF5: // Disable streaming
         ps2dev_write(dev, PS2_ACK);
-        inp->buf[BUF_STATE] &= ~STATE_STREAM;
+        inp->buf[BUF_STATE] |= STATE_DISABLED;
+        return 0;
+
+    case 0xFF:
+        inp->buf[BUF_STATE] &= ~STATE_MODE;
+
+        ps2dev_write(dev, 0xAA);
+        while (ps2dev_write(dev, 0x00) != 0)
+            usleep(40);
         return 0;
     }
 
@@ -104,7 +241,8 @@ int ps2input_poll(struct ps2input* input)
         case EV_KEY:
             if (input->target_device->type == PS2DEV_KEYBOARD)
             {
-                if (input->buf[BUF_STATE] & STATE_STREAM)
+                if ((input->buf[BUF_STATE] & STATE_MODE) == MODE_STREAM &&
+                   (input->buf[BUF_STATE] & STATE_DISABLED) == 0)
                 {
                     if (obj.value == 0)
                         ps2dev_keyboard_release(input->target_device, obj.code);
@@ -144,7 +282,8 @@ int ps2input_poll(struct ps2input* input)
                     input->buf[BUF_KBD_LED] &= ~(1 << obj.code);
             }
 
-            if (input->buf[BUF_STATE] & STATE_STREAM)
+            if ((input->buf[BUF_STATE] & STATE_MODE) == MODE_STREAM &&
+               (input->buf[BUF_STATE] & STATE_DISABLED) == 0)
             {
                 ps2dev_write(input->target_device, 0xED);
                 ps2dev_write(input->target_device, (uint8_t)(input->buf[BUF_KBD_LED] & 0xFF));
@@ -160,8 +299,9 @@ int ps2input_poll(struct ps2input* input)
 
         case EV_SYN:
             // TODO: Rate
-            if (obj.code == SYN_REPORT && input->target_device->type == PS2DEV_MOUSE
-                && (input->buf[BUF_STATE] & STATE_STREAM))
+            if (obj.code == SYN_REPORT && input->target_device->type == PS2DEV_MOUSE &&
+               (input->buf[BUF_STATE] & STATE_MODE) == MODE_STREAM &&
+               (input->buf[BUF_STATE] & STATE_DISABLED) == 0)
                 ps2dev_mouse_write(input->target_device, input->buf[BUF_MOUSE_X], input->buf[BUF_MOUSE_Y], input->buf[BUF_MOUSE_B]);
             break;
         }

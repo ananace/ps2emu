@@ -131,8 +131,8 @@ int ps2dev_poll(struct ps2dev* dev)
         break;
 
     case 0xFF: // Reset, run self-test
-        ps2dev_write(dev, PS2_ACK);
-        while (ps2dev_write(dev, PS2_TEST_SUCC) != 0)
+        ps2dev_write(dev, 0xAA);
+        while (ps2dev_write(dev, 0x00) != 0)
             usleep(PS2CLK_DELAY);
         break;
 
@@ -140,7 +140,7 @@ int ps2dev_poll(struct ps2dev* dev)
 #ifdef DEBUG
         printf("Unhandled PS/2 command 0x%X received on %s\n", cmd, dev->name);
 #endif
-        ps2dev_write(dev, PS2_ACK);
+        ps2dev_write(dev, PS2_NAK);
         break;
     }
 

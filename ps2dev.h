@@ -10,6 +10,7 @@
 #define PS2_TEST_FAIL1 0xFC
 #define PS2_TEST_FAIL2 0xFD
 #define PS2_RESEND     0xFE
+#define PS2_NAK        0xFE
 #define PS2_ERR2       0xFF
 
 #define PS2DEV_KEYBOARD 0
